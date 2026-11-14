@@ -1,0 +1,152 @@
+esphome:
+  name: ultimate-9000eev
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: esp-idf
+logger:
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+ota:
+  - platform: esphome
+    password: !secret ota_password
+api:
+  reboot_timeout: 0s
+  encryption:
+    key: !secret api_encryption_key
+web_server:
+  port: 80
+  version: 2
+  local: true
+  log: false
+sensor:
+  - platform: template
+    name: Varaajan lämpötila
+    id: tank
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    update_interval: never
+text_sensor:
+  - platform: template
+    name: Kompressorin tila
+    id: compressor_status
+    update_interval: never
+    lambda: return {"Ei yhteyttä"};
+  - platform: template
+    name: Pumpun ilmoittama tila
+    id: pump_status
+    update_interval: never
+    lambda: return {"Ei yhteyttä"};
+number:
+  - platform: template
+    name: Lämpötilapyynti
+    id: target
+    optimistic: true
+    restore_value: true
+    initial_value: 45
+    min_value: 35
+    max_value: 45
+    step: 1
+switch:
+  - platform: template
+    name: Pumpun ON/OFF-pyyntö
+    id: enabled
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+uart:
+  id: panel_bus
+  rx_full_threshold: 1
+  tx_pin: GPIO42
+  rx_pin: GPIO4
+  baud_rate: 9600
+interval:
+  - interval: 1ms
+    then:
+      - lambda: |-
+          // Respond only to complete, checksum-valid 00 -> FF frames.
+          static const uint8_t header[] = {0x7e, 0x7e, 0x00, 0xff, 0x11, 0x0e};
+          static uint8_t on_45[] = {
+            0x7e, 0x7e, 0xff, 0x00, 0x11, 0x15, 0x20, 0x05, 0x82,
+            0x63, 0x98, 0x2e, 0x07, 0x28, 0x7c, 0x14, 0x2d, 0x08,
+            0x06, 0x0c, 0x35, 0x30, 0x02, 0x7c, 0x78, 0x82, 0x60
+          };
+          static size_t position = 0;
+          static uint8_t checksum = 0;
+          static uint32_t last_byte = 0;
+          static uint8_t status[19];
+          static size_t status_pos = 0;
+          static uint32_t last_status = 0;
+          static bool fresh = false;
+          static uint32_t last_request = 0;
+          static bool request_fresh = false;
+          static bool was_running = false;
+          static bool was_on = false;
+          uint8_t byte;
+          while (id(panel_bus).read_byte(&byte)) {
+            const uint32_t now = millis();
+            if (now - last_byte > 30) position = 0;
+            if (now - last_byte > 30) status_pos = 0;
+            last_byte = now;
+            static const uint8_t status_header[] = {0x7e, 0x7e, 0xff, 0x40, 0x11, 0x0d};
+            if (status_pos >= sizeof(status_header) || byte == status_header[status_pos]) {
+              status[status_pos++] = byte;
+              if (status_pos == sizeof(status)) {
+                uint8_t check = 0;
+                for (auto value : status) check ^= value;
+                if (check == 0) {
+                  const float temperature = (status[10] - 87) / 2.0f;
+                  if (!fresh || id(tank).state != temperature) id(tank).publish_state(temperature);
+                  last_status = now;
+                  fresh = true;
+                }
+                status_pos = 0;
+              }
+            } else {
+              status_pos = byte == 0x7e ? (status_pos == 2 ? 2 : 1) : 0;
+              if (status_pos) status[0] = 0x7e;
+            }
+            if (position < sizeof(header) && byte != header[position]) {
+              position = byte == header[0] ? 1 : 0;
+              checksum = position ? byte : 0;
+              continue;
+            }
+            if (position == 0) checksum = 0;
+            static bool running = false;
+            static uint8_t byte_before_checksum = 0;
+            if (position == 18) byte_before_checksum = byte;
+            if (position == 14) running = (byte & 0x04) != 0;
+            checksum ^= byte;
+            if (++position == 20) {
+              position = 0;
+              if (checksum == 0) {
+                if (!request_fresh || running != was_running) {
+                  id(compressor_status).publish_state(running ? "Running" : "Lepää");
+                }
+                const bool pump_on = (byte_before_checksum & 0x10) != 0;
+                if (!request_fresh || pump_on != was_on) {
+                  id(pump_status).publish_state(pump_on ? "ON" : "OFF");
+                }
+                was_on = pump_on;
+                last_request = now;
+                request_fresh = true;
+                was_running = running;
+                on_45[9] = id(enabled).state ? 0x63 : 0x98;
+                on_45[13] = static_cast<uint8_t>(id(target).state) - 5;
+                uint8_t check = 0;
+                for (size_t i = 0; i < sizeof(on_45) - 1; ++i) check ^= on_45[i];
+                on_45[sizeof(on_45) - 1] = check;
+                delayMicroseconds(2000);
+                id(panel_bus).write_array(on_45, sizeof(on_45));
+              }
+            }
+          }
+          if (request_fresh && millis() - last_request > 5000) {
+            request_fresh = false;
+            id(compressor_status).publish_state("Ei yhteyttä");
+            id(pump_status).publish_state("Ei yhteyttä");
+          }
+          if (fresh && millis() - last_status > 5000) {
+            fresh = false;
+            id(tank).publish_state(NAN);
+          }
