@@ -49,3 +49,16 @@ test ended in an EC communication fault and was inconclusive.
 
 - [Gree wired panel framing reference](https://github.com/maxim-smirnov/gree-wired-proto)
 - [Comparable Gree RS-485 captures](https://github.com/bekmansurov/gree-hvac-protocol/issues/8)
+
+## ESPHome panel replacement
+
+[The ESPHome configuration](firmware/ultimate-panel.yaml) is based on
+the tested 2 ms firmware for the ESP32-S2-DevKitM-1 and Waveshare
+WS-27479. See [PROTOCOL.md](PROTOCOL.md) for wiring and test results.
+
+Copy `firmware/secrets.example.yaml` to `firmware/secrets.yaml` and
+fill in the Wi-Fi and OTA settings. Generate an API encryption key
+with `openssl rand -base64 32`. Validate and build with
+`esphome config firmware/ultimate-panel.yaml` and
+`esphome compile firmware/ultimate-panel.yaml`. The HTTP controls
+are unauthenticated, so keep the device on a trusted local network.
