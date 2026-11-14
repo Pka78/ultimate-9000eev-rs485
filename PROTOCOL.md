@@ -32,3 +32,22 @@ Use 3.3 V UART on the ESP side and keep its ground separate from the
 isolated bus ground. The pump's +12 V stays disconnected from the
 USB-powered ESP assembly. Verify stable communication and the pump's
 reported ON/OFF state before testing a changed setpoint.
+
+## Follow-up tests
+
+The ESP replacement passed ON/OFF and setpoint tests with the original
+panel disconnected. The pump completed a full heating cycle. The
+published ESPHome configuration uses a 2 ms response delay.
+
+With the pump disconnected, the ESP and passive monitor exchanged
+80/80 intact test frames. After reconnecting the pump, all 38 sampled
+ESP responses had the expected length and valid XOR. An intermittent
+connection in the monitor branch is suspected. The cause of the
+earlier malformed captures remains unconfirmed.
+
+The Gree KFRS-9/Na-M controller manual identifies CHECK 07 as discharge
+temperature, CHECK 05 as defrost sensor temperature and CHECK 12 as
+defrost/terminal status. The CHECK 07 byte and conversion are still
+provisional. The bus fields for CHECK 05 and CHECK 12 are unidentified.
+
+[Controller manual, page 23](https://www.manualslib.com/manual/881653/Gree-Kfrs-9-Na-M.html?page=23)
