@@ -1,2 +1,5 @@
 /captures/
 __pycache__/
+
+firmware/secrets.yaml
+firmware/.esphome/
