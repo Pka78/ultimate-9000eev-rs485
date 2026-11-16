@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ultimate 9000EEV",
+        "description": "Connect to the local ESP controller event stream.",
+        "data": {
+          "host": "ESP address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the ESP event stream."
+    },
+    "abort": {
+      "already_configured": "This ESP controller is already configured.",
+      "cannot_connect": "Could not connect to the ESP event stream."
+    }
+  }
+}
