@@ -1,4 +1,10 @@
 esphome:
+  includes:
+    - panel_bus_log.h
+  on_boot:
+    priority: -100
+    then:
+      - lambda: esphome::web_server_base::global_web_server_base->add_handler(&panel_bus_log);
   name: ultimate-9000eev
 esp32:
   board: esp32-s2-saola-1
@@ -26,6 +32,12 @@ sensor:
     id: tank
     unit_of_measurement: "°C"
     accuracy_decimals: 1
+    update_interval: never
+  - platform: template
+    name: Check 07 kuumakaasu (kokeellinen)
+    id: check07
+    unit_of_measurement: "°C"
+    accuracy_decimals: 0
     update_interval: never
 text_sensor:
   - platform: template
@@ -85,6 +97,7 @@ interval:
           uint8_t byte;
           while (id(panel_bus).read_byte(&byte)) {
             const uint32_t now = millis();
+            panel_bus_log.record(now, 'R', byte);
             if (now - last_byte > 30) position = 0;
             if (now - last_byte > 30) status_pos = 0;
             last_byte = now;
@@ -112,6 +125,8 @@ interval:
               continue;
             }
             if (position == 0) checksum = 0;
+            static uint8_t check07_raw = 0;
+            if (position == 11) check07_raw = byte;
             static bool running = false;
             static uint8_t byte_before_checksum = 0;
             if (position == 18) byte_before_checksum = byte;
@@ -136,13 +151,19 @@ interval:
                 uint8_t check = 0;
                 for (size_t i = 0; i < sizeof(on_45) - 1; ++i) check ^= on_45[i];
                 on_45[sizeof(on_45) - 1] = check;
+                const bool publish_check07 = isnan(id(check07).state) || id(check07).state != check07_raw + 3;
                 delayMicroseconds(2000);
+                const uint32_t tx_time = millis();
                 id(panel_bus).write_array(on_45, sizeof(on_45));
+                for (const uint8_t value : on_45) panel_bus_log.record(tx_time, 'T', value);
+                // Provisional conversion. Validate against the original panel at several temperatures.
+                if (publish_check07) id(check07).publish_state(check07_raw + 3);
               }
             }
           }
           if (request_fresh && millis() - last_request > 5000) {
             request_fresh = false;
+            id(check07).publish_state(NAN);
             id(compressor_status).publish_state("Ei yhteyttä");
             id(pump_status).publish_state("Ei yhteyttä");
           }
@@ -150,3 +171,69 @@ interval:
             fresh = false;
             id(tank).publish_state(NAN);
           }
+
+i2c:
+  sda: GPIO8
+  scl: GPIO9
+  scan: false
+
+font:
+  - file: /usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf
+    id: oled_font
+    size: 10
+    glyphs: " 0123456789.-°ABCDEHIKLNOPRSTVY"
+
+globals:
+  - id: oled_awake
+    type: bool
+    initial_value: 'false'
+  - id: oled_wake_time
+    type: uint32_t
+    initial_value: '0'
+
+button:
+  - platform: template
+    name: Herätä näyttö 30 sekunniksi
+    on_press:
+      - lambda: |-
+          id(oled_wake_time) = millis();
+          id(oled_awake) = true;
+          id(panel_oled).turn_on();
+          id(panel_oled).update();
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x32"
+    address: 0x3C
+    id: panel_oled
+    update_interval: 1s
+    lambda: |-
+      static float wake_temperature = NAN;
+      const float temperature = id(tank).state;
+      if (!isnan(temperature) &&
+          (isnan(wake_temperature) || fabsf(temperature - wake_temperature) >= 1.0f)) {
+        wake_temperature = temperature;
+        id(oled_wake_time) = millis();
+        id(oled_awake) = true;
+        id(panel_oled).turn_on();
+      }
+      if (id(oled_awake) && millis() - id(oled_wake_time) >= 30000U) {
+        id(oled_awake) = false;
+      }
+      if (!id(oled_awake)) {
+        id(panel_oled).turn_off();
+        return;
+      }
+      if (isnan(temperature)) {
+        it.print(0, 0, id(oled_font), "VAR --.- C");
+      } else {
+        it.printf(0, 0, id(oled_font), "VAR %.1f C", id(tank).state);
+      }
+      it.printf(0, 11, id(oled_font), "PYYNTI %.0f C", id(target).state);
+      const char *state = "EI YHTEYTTA";
+      if (id(pump_status).state == "OFF") {
+        state = "POIS";
+      } else if (id(pump_status).state == "ON") {
+        state = id(compressor_status).state == "Running" ? "KAY" : "STANDBY";
+      }
+      it.print(0, 22, id(oled_font), state);
