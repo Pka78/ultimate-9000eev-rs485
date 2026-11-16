@@ -62,3 +62,7 @@ with `openssl rand -base64 32`. Validate and build with
 `esphome config firmware/ultimate-panel.yaml` and
 `esphome compile firmware/ultimate-panel.yaml`. The HTTP controls
 are unauthenticated, so keep the device on a trusted local network.
+
+## Home Assistant integration
+
+The local Home Assistant custom integration is published in [`custom_components/ultimate_9000eev`](custom_components/ultimate_9000eev/). It connects to the ESP panel's HTTP event stream; it does not implement RS-485 or Gree protocol decoding. See the [Home Assistant integration and control notes](home_assistant/README.md) for installation, entities, the ESP HTTP contract, and safety boundaries.
