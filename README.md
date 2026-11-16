@@ -63,6 +63,13 @@ with `openssl rand -base64 32`. Validate and build with
 `esphome compile firmware/ultimate-panel.yaml`. The HTTP controls
 are unauthenticated, so keep the device on a trusted local network.
 
+The development firmware adds OLED support, a 30-second wake button,
+and an experimental Check 07 reading. Install DejaVu Sans Mono or adjust
+its path in the configuration before building. The read-only `/bus-log`
+endpoint downloads the most recent 256 RAM-buffered UART entries. `R`
+means received bytes and `T` means bytes queued to the UART. The buffer
+clears on reboot.
+
 ## Home Assistant integration
 
 The local Home Assistant custom integration is published in [`custom_components/ultimate_9000eev`](custom_components/ultimate_9000eev/). It connects to the ESP panel's HTTP event stream; it does not implement RS-485 or Gree protocol decoding. See the [Home Assistant integration and control notes](home_assistant/README.md) for installation, entities, the ESP HTTP contract, and safety boundaries.
